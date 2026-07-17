@@ -327,6 +327,15 @@ export default function AttendanceScreen() {
               color={colors.warning}
               colors={colors}
             />
+            <LeaveBalanceCard
+              label="Lieu"
+              quota={balance.lieuEarnedThisMonth}
+              used={balance.lieuUsedThisMonth}
+              remaining={balance.lieuRemainingThisMonth}
+              unit="days/mo"
+              color={colors.success}
+              colors={colors}
+            />
           </View>
         </Animated.View>
       )}
@@ -425,7 +434,7 @@ function LeaveList({
   }
 
   const leaveTypeColors: Record<string, string> = {
-    casual: colors.primary, annual: colors.accent, short: colors.warning,
+    casual: colors.primary, annual: colors.accent, short: colors.warning, lieu: colors.success,
   };
   const statusColors: Record<string, string> = {
     pending: colors.warning, approved: colors.success, rejected: colors.destructive,
@@ -501,9 +510,9 @@ function LeaveBalanceCard({ label, quota, used, remaining, unit, color, colors }
   label: string; quota: number; used: number; remaining: number; unit: string;
   color: string; colors: ReturnType<typeof useColors>;
 }) {
-  const pct = Math.min(1, used / quota);
+  const pct = quota > 0 ? Math.min(1, used / quota) : 0;
   return (
-    <View style={{ flex: 1, backgroundColor: colors.card, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: colors.border, gap: 5, alignItems: "center" }}>
+    <View style={{ flex: 1, minWidth: "47%", backgroundColor: colors.card, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: colors.border, gap: 5, alignItems: "center" }}>
       <Text style={{ fontSize: 10, color: colors.mutedForeground, fontFamily: "Inter_600SemiBold", textTransform: "uppercase" }}>{label}</Text>
       <Text style={{ fontSize: 22, fontWeight: "700", color: remaining === 0 ? colors.destructive : colors.foreground, fontFamily: "Inter_700Bold" }}>
         {remaining}
@@ -544,7 +553,7 @@ const styles = (colors: ReturnType<typeof useColors>) =>
     leaveHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
     applyBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 7 },
     applyBtnText: { fontSize: 13, fontWeight: "700", color: colors.primaryForeground, fontFamily: "Inter_700Bold" },
-    balanceRow: { flexDirection: "row", gap: 8 },
+    balanceRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     tabToggle: { flexDirection: "row", backgroundColor: colors.muted, borderRadius: 10, padding: 3, gap: 3 },
     tabBtn: { borderRadius: 8, paddingHorizontal: 10, paddingVertical: 6 },
     tabBtnText: { fontSize: 12, fontWeight: "600", color: colors.mutedForeground, fontFamily: "Inter_600SemiBold" },

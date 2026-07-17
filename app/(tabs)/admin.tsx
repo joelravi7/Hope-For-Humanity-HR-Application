@@ -23,6 +23,7 @@ import {
   canReviewLeaveApplication,
   canViewManagedActivity,
   checkInArrivalLabel,
+  getLieuEligibleAttendanceDates,
   getCheckInArrivalStatus,
   isSystemAdmin,
   roleLabel,
@@ -175,6 +176,21 @@ function periodMatches(value: string, period: ReportPeriod) {
   return key >= normalized.startDate && key <= normalized.endDate;
 }
 
+function periodMonthValues(period: ReportPeriod) {
+  const normalized = normalizePeriod(period);
+  const start = parseDateValue(normalized.startDate);
+  const end = parseDateValue(normalized.endDate);
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  const values: string[] = [];
+
+  while (cursor.getTime() <= end.getTime()) {
+    values.push(`${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, "0")}`);
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  return values;
+}
+
 function arrivalStatusForRecord(record?: { checkIn?: string; checkInArrivalStatus?: CheckInArrivalStatus }) {
   return record?.checkInArrivalStatus ?? getCheckInArrivalStatus(record?.checkIn);
 }
@@ -269,7 +285,7 @@ function buildLeaveUtilizationReport(viewer: User, users: User[], leaves: LeaveA
     status,
     count: scopedLeaves.filter((leave) => leave.status === status).length,
   }));
-  const byType = ["casual", "annual", "short", "medical"].map((type) => ({
+  const byType = ["casual", "annual", "short", "medical", "lieu"].map((type) => ({
     type,
     days: scopedLeaves.filter((leave) => leave.leaveType === type).reduce((sum, leave) => sum + leave.durationDays, 0),
     hours: scopedLeaves.filter((leave) => leave.leaveType === type).reduce((sum, leave) => sum + leave.durationHours, 0),
@@ -295,12 +311,14 @@ function buildLeaveUtilizationReport(viewer: User, users: User[], leaves: LeaveA
   return lines.join("\n");
 }
 
-function buildLeaveBalancesReport(viewer: User, users: User[], leaves: LeaveApplication[], period: ReportPeriod) {
+function buildLeaveBalancesReport(viewer: User, users: User[], leaves: LeaveApplication[], records: AttendanceRecord[], period: ReportPeriod) {
   const lines = reportHeader("Leave Balance Report", viewer, period, users.length);
   const normalized = normalizePeriod(period);
   const year = parseDateValue(normalized.startDate).getFullYear();
+  const months = periodMonthValues(period);
 
   lines.push(`Annual quotas: Casual ${CASUAL_LEAVE_QUOTA}d, Annual ${ANNUAL_LEAVE_QUOTA}d, Short ${SHORT_LEAVE_QUOTA}h/month`);
+  lines.push("Lieu Leave: earned monthly from completed 5+ hour workdays on Saturdays, Sundays, or Sri Lankan public holidays.");
   lines.push("");
 
   users.forEach((user) => {
@@ -319,9 +337,13 @@ function buildLeaveBalancesReport(viewer: User, users: User[], leaves: LeaveAppl
     const medicalUsed = quotaHolding
       .filter((leave) => leave.leaveType === "medical" && new Date(leave.startDate).getFullYear() === year)
       .reduce((sum, leave) => sum + leave.durationDays, 0);
+    const lieuEarned = months.reduce((sum, month) => sum + getLieuEligibleAttendanceDates(user.id, month, records).length, 0);
+    const lieuUsed = quotaHolding
+      .filter((leave) => leave.leaveType === "lieu" && periodMatches(leave.startDate, period))
+      .reduce((sum, leave) => sum + leave.durationDays, 0);
 
     lines.push(
-      `- ${user.name} (${user.employeeId}): casual ${casualUsed}/${CASUAL_LEAVE_QUOTA}, annual ${annualUsed}/${ANNUAL_LEAVE_QUOTA}, short ${shortUsed}/${SHORT_LEAVE_QUOTA}h, medical ${medicalUsed}d`,
+      `- ${user.name} (${user.employeeId}): casual ${casualUsed}/${CASUAL_LEAVE_QUOTA}, annual ${annualUsed}/${ANNUAL_LEAVE_QUOTA}, short ${shortUsed}/${SHORT_LEAVE_QUOTA}h, lieu ${lieuUsed}/${lieuEarned}d, medical ${medicalUsed}d`,
     );
   });
 
@@ -412,7 +434,7 @@ function buildReport({
     case "leave-utilization":
       return buildLeaveUtilizationReport(viewer, users, leaves, period);
     case "leave-balances":
-      return buildLeaveBalancesReport(viewer, users, leaves, period);
+      return buildLeaveBalancesReport(viewer, users, leaves, records, period);
     case "staff-roster":
       return buildStaffRosterReport(viewer, users, period);
     case "access-control":

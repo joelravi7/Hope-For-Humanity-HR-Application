@@ -92,7 +92,7 @@ export interface AuditLog {
   note?: string;
 }
 
-export type LeaveType = "casual" | "annual" | "short" | "medical";
+export type LeaveType = "casual" | "annual" | "short" | "medical" | "lieu";
 export type LeaveStatus = "pending" | "approved" | "rejected" | "cancel-pending" | "cancelled";
 type LeaveApplicationInput = Omit<LeaveApplication, "id" | "status" | "createdAt"> & { id?: string };
 
@@ -118,6 +118,7 @@ export interface LeaveApplication {
 export const CASUAL_LEAVE_QUOTA = 7;
 export const ANNUAL_LEAVE_QUOTA = 14;
 export const SHORT_LEAVE_QUOTA = 3;
+export const LIEU_LEAVE_MINIMUM_WORK_HOURS = 5;
 export const REGULAR_SIGN_IN_LABEL = "8:30 AM";
 export const CHECK_IN_GRACE_LABEL = "8:31 AM - 8:59 AM";
 export const LATE_CHECK_IN_WARNING = "Arriving to work late frequently will lead to consequences.";
@@ -129,6 +130,9 @@ export interface LeaveBalance {
   annualRemaining: number;
   shortHoursUsedThisMonth: number;
   shortHoursRemainingThisMonth: number;
+  lieuEarnedThisMonth: number;
+  lieuUsedThisMonth: number;
+  lieuRemainingThisMonth: number;
   medicalUsed: number;
 }
 
@@ -177,6 +181,92 @@ function calendarMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+function parseDateOnly(value: string) {
+  const [year, month, day] = value.split("T")[0].split("-").map(Number);
+  return year && month && day ? new Date(year, month - 1, day) : new Date(value);
+}
+
+function dateOnlyValue(value: string | Date) {
+  const d = value instanceof Date ? value : parseDateOnly(value);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function monthValue(value: string | Date) {
+  return dateOnlyValue(value).slice(0, 7);
+}
+
+// 2026 Sri Lankan B/P holidays from Central Bank of Sri Lanka. Move to backend config when going live.
+const SRI_LANKA_PUBLIC_HOLIDAYS: Record<string, string> = {
+  "2026-01-03": "Duruthu Full Moon Poya Day",
+  "2026-01-15": "Tamil Thai Pongal Day",
+  "2026-02-01": "Navam Full Moon Poya Day",
+  "2026-02-04": "Independence Day",
+  "2026-02-15": "Mahasivarathri Day",
+  "2026-03-02": "Medin Full Moon Poya Day",
+  "2026-03-21": "Id-Ul-Fitre (Ramazan Festival Day)",
+  "2026-04-01": "Bak Full Moon Poya Day",
+  "2026-04-03": "Good Friday",
+  "2026-04-13": "Day prior to Sinhala & Tamil New Year Day",
+  "2026-04-14": "Sinhala & Tamil New Year Day",
+  "2026-05-01": "Vesak Full Moon Poya Day / May Day",
+  "2026-05-02": "Day following Vesak Full Moon Poya Day",
+  "2026-05-28": "Id-Ul-Allah (Hadji Festival Day)",
+  "2026-05-30": "Adhi Poson Full Moon Poya Day",
+  "2026-06-29": "Poson Full Moon Poya Day",
+  "2026-07-29": "Esala Full Moon Poya Day",
+  "2026-08-26": "Milad-Un-Nabi (Holy Prophet's Birthday)",
+  "2026-08-27": "Nikini Full Moon Poya Day",
+  "2026-09-26": "Binara Full Moon Poya Day",
+  "2026-10-25": "Vap Full Moon Poya Day",
+  "2026-11-08": "Deepawali Festival Day",
+  "2026-11-24": "Ill Full Moon Poya Day",
+  "2026-12-23": "Unduwap Full Moon Poya Day",
+  "2026-12-25": "Christmas Day",
+};
+
+export function sriLankaPublicHolidayName(value: string | Date) {
+  return SRI_LANKA_PUBLIC_HOLIDAYS[dateOnlyValue(value)] ?? null;
+}
+
+export function isSriLankaPublicHoliday(value: string | Date) {
+  return !!sriLankaPublicHolidayName(value);
+}
+
+export function isWeekend(value: string | Date) {
+  const d = value instanceof Date ? value : parseDateOnly(value);
+  return d.getDay() === 0 || d.getDay() === 6;
+}
+
+export function isNonWorkingLeaveDate(value: string | Date) {
+  return isWeekend(value) || isSriLankaPublicHoliday(value);
+}
+
+export function countLeaveDays(start: string, end: string) {
+  const s = parseDateOnly(start);
+  const e = parseDateOnly(end);
+  if (e.getTime() < s.getTime()) return 0;
+  let count = 0;
+  const cursor = new Date(s);
+  while (cursor.getTime() <= e.getTime()) {
+    if (!isNonWorkingLeaveDate(cursor)) count += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
+}
+
+export function countExcludedLeaveDays(start: string, end: string) {
+  const s = parseDateOnly(start);
+  const e = parseDateOnly(end);
+  if (e.getTime() < s.getTime()) return 0;
+  let count = 0;
+  const cursor = new Date(s);
+  while (cursor.getTime() <= e.getTime()) {
+    if (isNonWorkingLeaveDate(cursor)) count += 1;
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return count;
+}
+
 export function getCheckInArrivalStatus(value?: string | Date | null): CheckInArrivalStatus | null {
   if (!value) return null;
   const d = value instanceof Date ? value : new Date(value);
@@ -207,6 +297,25 @@ function daysBetween(start: string, end: string) {
     return year && month && day ? new Date(year, month - 1, day) : new Date(value);
   };
   return Math.round((parse(end).getTime() - parse(start).getTime()) / 86400000) + 1;
+}
+
+function attendanceRecordMinutes(record: AttendanceRecord) {
+  if (!record.checkIn || !record.checkOut) return 0;
+  const diff = new Date(record.checkOut).getTime() - new Date(record.checkIn).getTime();
+  return Math.max(0, Math.round(diff / 60000));
+}
+
+export function isLieuEligibleAttendanceRecord(record: AttendanceRecord) {
+  if (!record.checkIn || !record.checkOut) return false;
+  return attendanceRecordMinutes(record) >= LIEU_LEAVE_MINIMUM_WORK_HOURS * 60 && isNonWorkingLeaveDate(record.checkIn);
+}
+
+export function getLieuEligibleAttendanceDates(userId: string, month: string, records: AttendanceRecord[]) {
+  return Array.from(new Set(
+    records
+      .filter((record) => record.userId === userId && monthValue(record.checkIn ?? record.date) === month && isLieuEligibleAttendanceRecord(record))
+      .map((record) => dateOnlyValue(record.checkIn ?? record.date)),
+  )).sort();
 }
 
 export function roleLabel(role?: UserRole) {
@@ -290,12 +399,17 @@ function holdsLeaveQuota(status: LeaveStatus) {
 function validateLeaveAgainstApplications(
   app: LeaveApplicationInput,
   applications: LeaveApplication[],
+  attendanceRecords: AttendanceRecord[],
 ): { valid: boolean; error?: string } {
   const year = calendarYear();
   const month = app.startDate.slice(0, 7);
   const existing = applications.filter(
     (a) => a.userId === app.userId && a.id !== app.id && holdsLeaveQuota(a.status),
   );
+
+  if (app.leaveType !== "short" && app.durationDays <= 0) {
+    return { valid: false, error: "The selected period has no countable leave days. Saturdays, Sundays, and Sri Lankan public holidays are excluded." };
+  }
 
   if (app.leaveType === "casual") {
     const used = existing
@@ -333,6 +447,20 @@ function validateLeaveAgainstApplications(
     if (usedHours + app.durationHours > SHORT_LEAVE_QUOTA) {
       const remaining = Math.max(0, SHORT_LEAVE_QUOTA - usedHours);
       return { valid: false, error: `You only have ${remaining} short leave hour${remaining !== 1 ? "s" : ""} remaining this month, including pending requests.` };
+    }
+  }
+
+  if (app.leaveType === "lieu") {
+    if (app.startDate.slice(0, 7) !== app.endDate.slice(0, 7)) {
+      return { valid: false, error: "Lieu Leave must be used within a single calendar month." };
+    }
+    const earned = getLieuEligibleAttendanceDates(app.userId, month, attendanceRecords).length;
+    const used = existing
+      .filter((a) => a.leaveType === "lieu" && a.startDate.startsWith(month))
+      .reduce((s, a) => s + a.durationDays, 0);
+    if (used + app.durationDays > earned) {
+      const remaining = Math.max(0, earned - used);
+      return { valid: false, error: `You only have ${remaining} Lieu Leave day${remaining !== 1 ? "s" : ""} remaining this month. Lieu Leave is earned from completed 5+ hour workdays on Saturdays, Sundays, or Sri Lankan public holidays.` };
     }
   }
 
@@ -443,6 +571,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const casualUsed = approved.filter((a) => a.leaveType === "casual" && new Date(a.startDate).getFullYear() === year).reduce((s, a) => s + a.durationDays, 0);
     const annualUsed = approved.filter((a) => a.leaveType === "annual" && new Date(a.startDate).getFullYear() === year).reduce((s, a) => s + a.durationDays, 0);
     const shortHoursUsedThisMonth = approved.filter((a) => a.leaveType === "short" && a.startDate.startsWith(month)).reduce((s, a) => s + a.durationHours, 0);
+    const lieuEarnedThisMonth = getLieuEligibleAttendanceDates(userId, month, state.attendanceRecords).length;
+    const lieuUsedThisMonth = approved.filter((a) => a.leaveType === "lieu" && a.startDate.startsWith(month)).reduce((s, a) => s + a.durationDays, 0);
     const medicalUsed = approved.filter((a) => a.leaveType === "medical" && new Date(a.startDate).getFullYear() === year).reduce((s, a) => s + a.durationDays, 0);
     return {
       casualUsed,
@@ -451,14 +581,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       annualRemaining: Math.max(0, ANNUAL_LEAVE_QUOTA - annualUsed),
       shortHoursUsedThisMonth,
       shortHoursRemainingThisMonth: Math.max(0, SHORT_LEAVE_QUOTA - shortHoursUsedThisMonth),
+      lieuEarnedThisMonth,
+      lieuUsedThisMonth,
+      lieuRemainingThisMonth: Math.max(0, lieuEarnedThisMonth - lieuUsedThisMonth),
       medicalUsed,
     };
-  }, [state.leaveApplications]);
+  }, [state.attendanceRecords, state.leaveApplications]);
 
   const validateLeaveApplication = useCallback(
     (app: LeaveApplicationInput): { valid: boolean; error?: string } =>
-      validateLeaveAgainstApplications(app, state.leaveApplications),
-    [state.leaveApplications]
+      validateLeaveAgainstApplications(app, state.leaveApplications, state.attendanceRecords),
+    [state.attendanceRecords, state.leaveApplications]
   );
 
   const login = async (email: string, password: string) => {
@@ -648,7 +781,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       return { success: false, error: "You do not have permission to review this leave request." };
     }
     if (status === "approved") {
-      const check = validateLeaveAgainstApplications(existing, state.leaveApplications);
+      const check = validateLeaveAgainstApplications(existing, state.leaveApplications, state.attendanceRecords);
       if (!check.valid) return { success: false, error: check.error };
     }
     setState((prev) => {

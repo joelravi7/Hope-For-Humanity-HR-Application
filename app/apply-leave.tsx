@@ -18,10 +18,13 @@ import { CalendarField } from "@/components/CalendarField";
 import {
   ANNUAL_LEAVE_QUOTA,
   CASUAL_LEAVE_QUOTA,
+  LIEU_LEAVE_MINIMUM_WORK_HOURS,
   LeaveType,
   SHORT_LEAVE_QUOTA,
   UserRole,
   canApplyLeave,
+  countExcludedLeaveDays,
+  countLeaveDays,
   useApp,
 } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
@@ -50,6 +53,12 @@ const LEAVE_TYPES: { value: LeaveType; label: string; icon: any; desc: string }[
     label: "Medical Leave",
     icon: "medkit-outline",
     desc: "Certificate required for more than 2 days",
+  },
+  {
+    value: "lieu",
+    label: "Lieu Leave",
+    icon: "briefcase-outline",
+    desc: `Earned from ${LIEU_LEAVE_MINIMUM_WORK_HOURS}+h weekend/holiday work`,
   },
 ];
 
@@ -114,7 +123,9 @@ export default function ApplyLeaveScreen() {
   }
 
   const balance = getLeaveBalance(currentUser.id);
-  const durationDays = leaveType !== "short" ? daysBetween(startDate, endDate) : 0;
+  const calendarDays = leaveType !== "short" ? daysBetween(startDate, endDate) : 0;
+  const durationDays = leaveType !== "short" ? countLeaveDays(startDate, endDate) : 0;
+  const excludedDays = leaveType !== "short" ? countExcludedLeaveDays(startDate, endDate) : 0;
   const durationHours = leaveType === "short" ? parseFloat(shortHours) || 0 : 0;
 
   const runValidation = () => {
@@ -142,6 +153,10 @@ export default function ApplyLeaveScreen() {
     }
     if (leaveType !== "short" && parseLocalDate(endDate) < parseLocalDate(startDate)) {
       Alert.alert("Invalid Dates", "End date cannot be before start date.");
+      return;
+    }
+    if (leaveType !== "short" && durationDays <= 0) {
+      Alert.alert("No Leave Days Counted", "Saturdays, Sundays, and Sri Lankan public holidays are excluded from leave day counts. Please select at least one working day.");
       return;
     }
     if (leaveType === "medical" && durationDays > 2 && !medicalCertificateName) {
@@ -175,7 +190,7 @@ export default function ApplyLeaveScreen() {
 
   const annualRuleInfo =
     balance.annualUsed < 10
-      ? `Must apply in min. 5 consecutive days. After 10 days total, remaining 4 must be taken at once.`
+      ? `Must apply in min. 5 counted working leave days. After 10 days total, remaining 4 must be taken at once.`
       : balance.annualUsed < 14
       ? `You have used 10+ days. Remaining ${balance.annualRemaining} day${balance.annualRemaining !== 1 ? "s" : ""} must be taken together.`
       : null;
@@ -219,6 +234,14 @@ export default function ApplyLeaveScreen() {
             color={colors.warning}
             colors={colors}
           />
+          <BalanceCard
+            label="Lieu"
+            used={balance.lieuUsedThisMonth}
+            quota={balance.lieuEarnedThisMonth}
+            unit="days/mo"
+            color={colors.success}
+            colors={colors}
+          />
         </Animated.View>
 
         {/* Leave Type Selector */}
@@ -234,6 +257,8 @@ export default function ApplyLeaveScreen() {
                   ? balance.annualRemaining === 0
                   : t.value === "short"
                   ? balance.shortHoursRemainingThisMonth === 0
+                  : t.value === "lieu"
+                  ? balance.lieuRemainingThisMonth === 0
                   : false;
               return (
                 <Pressable
@@ -269,6 +294,15 @@ export default function ApplyLeaveScreen() {
           </Animated.View>
         )}
 
+        {leaveType === "lieu" && (
+          <Animated.View entering={FadeInDown.duration(300)} style={s.ruleBox}>
+            <Ionicons name="briefcase-outline" size={16} color={colors.accent} />
+            <Text style={s.ruleText}>
+              Lieu Leave is valid only within the earned month. This month: {balance.lieuEarnedThisMonth} earned, {balance.lieuUsedThisMonth} used, {balance.lieuRemainingThisMonth} remaining.
+            </Text>
+          </Animated.View>
+        )}
+
         {/* Dates */}
         <Animated.View entering={FadeInDown.delay(100).duration(400)}>
           {leaveType !== "short" ? (
@@ -292,10 +326,12 @@ export default function ApplyLeaveScreen() {
                   />
                 </View>
               </View>
-              {durationDays > 0 && (
+              {calendarDays > 0 && (
                 <View style={s.durationBadge}>
                   <Ionicons name="calendar" size={14} color={colors.primary} />
-                  <Text style={s.durationText}>{durationDays} day{durationDays !== 1 ? "s" : ""} of leave</Text>
+                  <Text style={s.durationText}>
+                    {durationDays} working leave day{durationDays !== 1 ? "s" : ""}{excludedDays ? ` • ${excludedDays} weekend/public holiday day${excludedDays !== 1 ? "s" : ""} excluded` : ""}
+                  </Text>
                 </View>
               )}
             </>
@@ -403,10 +439,10 @@ function BalanceCard({
   label: string; used: number; quota: number; unit: string;
   color: string; colors: ReturnType<typeof useColors>;
 }) {
-  const pct = Math.min(1, used / quota);
-  const remaining = quota - used;
+  const pct = quota > 0 ? Math.min(1, used / quota) : 0;
+  const remaining = Math.max(0, quota - used);
   return (
-    <View style={{ flex: 1, backgroundColor: colors.card, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: colors.border, gap: 6 }}>
+    <View style={{ flex: 1, minWidth: "47%", backgroundColor: colors.card, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: colors.border, gap: 6 }}>
       <Text style={{ fontSize: 11, color: colors.mutedForeground, fontFamily: "Inter_600SemiBold", textTransform: "uppercase" }}>{label}</Text>
       <Text style={{ fontSize: 20, fontWeight: "700", color: remaining === 0 ? colors.destructive : colors.foreground, fontFamily: "Inter_700Bold" }}>
         {remaining}
@@ -434,7 +470,7 @@ const styles = (colors: ReturnType<typeof useColors>) =>
     backBtn: { padding: 4 },
     headerTitle: { fontSize: 17, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
     content: { padding: 16, gap: 20, paddingBottom: 64 },
-    balanceRow: { flexDirection: "row", gap: 8 },
+    balanceRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     sectionLabel: { fontSize: 13, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", marginBottom: 10, textTransform: "uppercase", letterSpacing: 0.5 },
     typeCards: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     typeCard: {
