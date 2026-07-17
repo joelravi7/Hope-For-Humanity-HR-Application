@@ -7,6 +7,7 @@ import * as SecureStore from "expo-secure-store";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -163,9 +164,8 @@ export default function LoginScreen() {
         <View style={s.inner}>
           <Animated.View entering={FadeInUp.delay(100).duration(600)} style={s.header}>
             <View style={s.logoWrap}>
-              <Ionicons name="shield-checkmark" size={38} color={colors.primary} />
+              <Image source={require("../assets/images/hfh-logo.png")} style={s.logoImage} resizeMode="contain" />
             </View>
-            <Text style={s.appName}>Hope for Humanity</Text>
             <Text style={s.tagline}>Secure Employee Field App</Text>
           </Animated.View>
 
@@ -263,11 +263,11 @@ const styles = (colors: ReturnType<typeof useColors>) =>
     inner: { flex: 1, paddingHorizontal: 24, justifyContent: "center", gap: 24 },
     header: { alignItems: "center", gap: 8 },
     logoWrap: {
-      width: 80, height: 80, borderRadius: 24,
-      backgroundColor: colors.card, alignItems: "center", justifyContent: "center",
-      borderWidth: 1, borderColor: colors.border, marginBottom: 4,
+      width: 196, height: 140, borderRadius: 16,
+      backgroundColor: "#ffffff", alignItems: "center", justifyContent: "center",
+      borderWidth: 1, borderColor: colors.border, marginBottom: 2, padding: 8,
     },
-    appName: { fontSize: 22, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold", textAlign: "center" },
+    logoImage: { width: "100%", height: "100%" },
     tagline: { fontSize: 13, color: colors.mutedForeground, fontFamily: "Inter_400Regular" },
     card: { backgroundColor: colors.card, borderRadius: 20, padding: 24, gap: 16, borderWidth: 1, borderColor: colors.border },
     cardTitle: { fontSize: 20, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },

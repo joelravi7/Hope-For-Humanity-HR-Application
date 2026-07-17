@@ -27,6 +27,7 @@ import {
   getCheckInArrivalStatus,
   isSystemAdmin,
   roleLabel,
+  sriLankaPublicHolidayName,
   useApp,
 } from "@/context/AppContext";
 import { PROGRAM_TYPES, REGIONS } from "@/constants/labels";
@@ -84,14 +85,15 @@ const REPORT_OPTIONS: { value: ReportType; label: string; icon: keyof typeof Ion
   { value: "audit-activity", label: "Audit Activity", icon: "receipt-outline" },
 ];
 
+const BRAND_PRIMARY = "#ff7a06";
 const REPORT_ACCENT_COLORS: Record<ReportType, string> = {
-  "attendance-summary": "#2563eb",
-  "daily-attendance": "#0891b2",
-  "leave-utilization": "#7c3aed",
-  "leave-balances": "#0f766e",
-  "staff-roster": "#4f46e5",
-  "access-control": "#be123c",
-  "audit-activity": "#b45309",
+  "attendance-summary": BRAND_PRIMARY,
+  "daily-attendance": BRAND_PRIMARY,
+  "leave-utilization": BRAND_PRIMARY,
+  "leave-balances": BRAND_PRIMARY,
+  "staff-roster": BRAND_PRIMARY,
+  "access-control": BRAND_PRIMARY,
+  "audit-activity": BRAND_PRIMARY,
 };
 
 function emptyUserForm(): UserFormState {
@@ -1438,6 +1440,10 @@ function DateRangeCalendar({
     ...Array(firstDay.getDay()).fill(null),
     ...Array.from({ length: daysInMonth }, (_, index) => dateValue(new Date(year, month, index + 1))),
   ];
+  const visibleHolidays = cells
+    .filter((value): value is string => !!value)
+    .map((date) => ({ date, name: sriLankaPublicHolidayName(date) }))
+    .filter((holiday): holiday is { date: string; name: string } => !!holiday.name);
   const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const changeMonth = (offset: number) => {
     setVisibleMonth(new Date(year, month + offset, 1));
@@ -1512,23 +1518,47 @@ function DateRangeCalendar({
               const isStart = value === normalized.startDate;
               const isEnd = value === normalized.endDate;
               const inRange = value >= normalized.startDate && value <= normalized.endDate;
+              const holidayName = sriLankaPublicHolidayName(value);
+              const isHoliday = !!holidayName;
               return (
                 <Pressable
                   key={value}
                   style={[
                     s.calendarDay,
                     inRange && { backgroundColor: colors.primary + "14" },
+                    isHoliday && !(isStart || isEnd) && s.calendarHolidayDay,
                     (isStart || isEnd) && { backgroundColor: colors.primary, borderColor: colors.primary },
                   ]}
                   onPress={() => selectDate(value)}
                 >
-                  <Text style={[s.calendarDayText, (isStart || isEnd) && { color: colors.primaryForeground }]}>
+                  <Text
+                    style={[
+                      s.calendarDayText,
+                      isHoliday && !(isStart || isEnd) && s.calendarHolidayDayText,
+                      (isStart || isEnd) && { color: colors.primaryForeground },
+                    ]}
+                  >
                     {parseDateValue(value).getDate()}
                   </Text>
+                  {isHoliday && <View style={[s.calendarHolidayDot, (isStart || isEnd) && { backgroundColor: colors.primaryForeground }]} />}
                 </Pressable>
               );
             })}
           </View>
+
+          {visibleHolidays.length > 0 && (
+            <View style={s.calendarHolidayPanel}>
+              <View style={s.calendarHolidayHeader}>
+                <View style={s.calendarHolidayDot} />
+                <Text style={s.calendarHolidayTitle}>Public holidays</Text>
+              </View>
+              {visibleHolidays.map((holiday) => (
+                <Text key={holiday.date} style={s.calendarHolidayText}>
+                  {parseDateValue(holiday.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}: {holiday.name}
+                </Text>
+              ))}
+            </View>
+          )}
 
           <Pressable style={s.primaryActionBtn} onPress={onClose}>
             <Ionicons name="checkmark-outline" size={17} color={colors.primaryForeground} />
@@ -1805,6 +1835,13 @@ const styles = (colors: ReturnType<typeof useColors>) =>
     calendarWeekText: { width: "13.45%", color: colors.mutedForeground, fontSize: 11, fontFamily: "Inter_700Bold", textAlign: "center" },
     calendarDay: { width: "13.45%", aspectRatio: 1, borderWidth: 1, borderColor: "transparent", borderRadius: 9, alignItems: "center", justifyContent: "center" },
     calendarDayText: { color: colors.foreground, fontSize: 13, fontFamily: "Inter_700Bold" },
+    calendarHolidayDay: { backgroundColor: colors.destructive + "12", borderColor: colors.destructive + "55" },
+    calendarHolidayDayText: { color: colors.destructive },
+    calendarHolidayDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.destructive, marginTop: 2 },
+    calendarHolidayPanel: { backgroundColor: colors.destructive + "10", borderWidth: 1, borderColor: colors.destructive + "33", borderRadius: 12, padding: 10, gap: 4 },
+    calendarHolidayHeader: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 2 },
+    calendarHolidayTitle: { color: colors.destructive, fontSize: 12, fontWeight: "700", fontFamily: "Inter_700Bold" },
+    calendarHolidayText: { color: colors.foreground, fontSize: 11, lineHeight: 15, fontFamily: "Inter_500Medium" },
     reportGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
     reportTypeBtn: { width: "47%", minHeight: 70, borderWidth: 1, borderColor: colors.border, borderRadius: 12, backgroundColor: colors.card, padding: 12, gap: 8, justifyContent: "center" },
     reportTypeText: { color: colors.foreground, fontSize: 12, fontWeight: "700", fontFamily: "Inter_700Bold" },

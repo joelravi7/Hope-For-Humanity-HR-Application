@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import React, { useMemo, useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
+import { sriLankaPublicHolidayName } from "@/context/AppContext";
 import { useColors } from "@/hooks/useColors";
 
 function toDateOnly(date: Date) {
@@ -48,6 +49,14 @@ export function CalendarField({
       return d;
     });
   }, [visibleMonth]);
+  const visibleHolidays = useMemo(
+    () =>
+      days
+        .filter((day) => day.getMonth() === visibleMonth.getMonth())
+        .map((day) => ({ date: toDateOnly(day), dayNumber: day.getDate(), name: sriLankaPublicHolidayName(day) }))
+        .filter((holiday): holiday is { date: string; dayNumber: number; name: string } => !!holiday.name),
+    [days, visibleMonth],
+  );
 
   const moveMonth = (amount: number) => {
     setVisibleMonth((current) => new Date(current.getFullYear(), current.getMonth() + amount, 1));
@@ -96,11 +105,14 @@ export function CalendarField({
                 const inMonth = day.getMonth() === visibleMonth.getMonth();
                 const isSelected = value && sameDay(day, selected);
                 const isToday = sameDay(day, new Date());
+                const holidayName = sriLankaPublicHolidayName(day);
+                const isHoliday = !!holidayName;
                 return (
                   <Pressable
                     key={toDateOnly(day)}
                     style={[
                       s.dayBtn,
+                      isHoliday && inMonth && !isSelected && s.holidayDay,
                       isSelected && { backgroundColor: colors.primary },
                       !isSelected && isToday && { borderColor: colors.primary },
                     ]}
@@ -110,15 +122,31 @@ export function CalendarField({
                       style={[
                         s.dayText,
                         !inMonth && { color: colors.mutedForeground, opacity: 0.45 },
+                        isHoliday && inMonth && !isSelected && s.holidayDayText,
                         isSelected && { color: colors.primaryForeground, fontFamily: "Inter_700Bold" },
                       ]}
                     >
                       {day.getDate()}
                     </Text>
+                    {isHoliday && inMonth && <View style={[s.holidayDot, isSelected && { backgroundColor: colors.primaryForeground }]} />}
                   </Pressable>
                 );
               })}
             </View>
+
+            {visibleHolidays.length > 0 && (
+              <View style={s.holidayPanel}>
+                <View style={s.holidayPanelHeader}>
+                  <View style={s.holidayDot} />
+                  <Text style={s.holidayTitle}>Public holidays</Text>
+                </View>
+                {visibleHolidays.map((holiday) => (
+                  <Text key={holiday.date} style={s.holidayText}>
+                    {holiday.dayNumber}: {holiday.name}
+                  </Text>
+                ))}
+              </View>
+            )}
 
             <View style={s.footer}>
               <Pressable style={s.footerBtn} onPress={() => chooseDate(new Date())}>
@@ -168,6 +196,13 @@ const styles = (colors: ReturnType<typeof useColors>) =>
       borderColor: "transparent",
     },
     dayText: { fontSize: 14, color: colors.foreground, fontFamily: "Inter_500Medium" },
+    holidayDay: { backgroundColor: colors.destructive + "12", borderColor: colors.destructive + "55" },
+    holidayDayText: { color: colors.destructive, fontFamily: "Inter_700Bold" },
+    holidayDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: colors.destructive, marginTop: 2 },
+    holidayPanel: { backgroundColor: colors.destructive + "10", borderWidth: 1, borderColor: colors.destructive + "33", borderRadius: 12, padding: 10, gap: 4, marginTop: 10 },
+    holidayPanelHeader: { flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 2 },
+    holidayTitle: { color: colors.destructive, fontSize: 12, fontWeight: "700", fontFamily: "Inter_700Bold" },
+    holidayText: { color: colors.foreground, fontSize: 11, lineHeight: 15, fontFamily: "Inter_500Medium" },
     footer: { flexDirection: "row", gap: 10, marginTop: 12 },
     footerBtn: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.primary, borderRadius: 12, paddingVertical: 12 },
     footerBtnText: { fontSize: 14, fontWeight: "700", color: colors.primaryForeground, fontFamily: "Inter_700Bold" },
