@@ -72,7 +72,6 @@ export default function AttendanceScreen() {
 
   const [loading, setLoading] = useState(false);
   const [locationStatus, setLocationStatus] = useState<"idle" | "tracking" | "denied">("idle");
-  const [lastLoggedAt, setLastLoggedAt] = useState<string | null>(null);
   const [clockTick, setClockTick] = useState(() => Date.now());
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pulseScale = useSharedValue(1);
@@ -117,7 +116,6 @@ export default function AttendanceScreen() {
           accuracy: loc.coords.accuracy ?? undefined,
           recordedAt: new Date().toISOString(),
         });
-        setLastLoggedAt(new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }));
       } catch {}
     }, LOCATION_INTERVAL_MS);
   };
@@ -206,7 +204,6 @@ export default function AttendanceScreen() {
     return `${h}h ${m}m`;
   })();
 
-  const locationLogs = todayAttendance?.locationLogs ?? [];
   const todayArrivalStatus = arrivalStatusForRecord(todayAttendance ?? undefined);
   const todayArrivalColor = arrivalMarkerColor(todayArrivalStatus, colors);
   const activeCheckButtonColor = isCheckedIn ? todayArrivalColor : colors.primary;
@@ -291,29 +288,6 @@ export default function AttendanceScreen() {
           </View>
         </Animated.View>
       )}
-
-      {/* Location Tracking Status */}
-      <Animated.View entering={FadeInDown.delay(180).duration(500)}>
-        <View style={[s.locCard, { borderColor: locationStatus === "tracking" ? colors.success + "66" : colors.border }]}>
-          <Ionicons
-            name={locationStatus === "tracking" ? "location" : "location-outline"}
-            size={18}
-            color={locationStatus === "tracking" ? colors.success : colors.mutedForeground}
-          />
-          <View style={{ flex: 1 }}>
-            <Text style={[s.locTitle, { color: locationStatus === "tracking" ? colors.success : colors.mutedForeground }]}>
-              {locationStatus === "tracking" ? "Location tracking active"
-                : locationStatus === "denied" ? "Location permission denied"
-                : "Location tracking inactive"}
-            </Text>
-            <Text style={s.locSub}>
-              {locationStatus === "tracking"
-                ? `Every 10 min${lastLoggedAt ? ` • Last: ${lastLoggedAt}` : ""} • ${locationLogs.length} log${locationLogs.length !== 1 ? "s" : ""}`
-                : "Active only during attendance session"}
-            </Text>
-          </View>
-        </View>
-      </Animated.View>
 
       {/* Leave Balance Card */}
       {leaveEligible && balance && (
@@ -561,9 +535,6 @@ const styles = (colors: ReturnType<typeof useColors>) =>
     directorNoticeTitle: { fontSize: 14, fontWeight: "700", color: colors.foreground, fontFamily: "Inter_700Bold" },
     directorNoticeText: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", lineHeight: 18, marginTop: 2 },
     statusCards: { flexDirection: "row", gap: 10 },
-    locCard: { flexDirection: "row", alignItems: "flex-start", gap: 10, backgroundColor: colors.card, borderRadius: 14, padding: 14, borderWidth: 1 },
-    locTitle: { fontSize: 13, fontWeight: "600", fontFamily: "Inter_600SemiBold" },
-    locSub: { fontSize: 12, color: colors.mutedForeground, fontFamily: "Inter_400Regular", marginTop: 2 },
     arrivalCard: { flexDirection: "row", alignItems: "flex-start", gap: 12, borderRadius: 14, padding: 14, borderWidth: 1 },
     arrivalIcon: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
     arrivalTitle: { fontSize: 14, fontWeight: "700", fontFamily: "Inter_700Bold" },
